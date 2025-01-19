@@ -1,9 +1,7 @@
-import { configDotenv } from "dotenv";
-import Wujob from "./51job";
+import WUJob from "./51job";
 
-configDotenv();
 async function main() {
-    const site = new Wujob("https://www.51job.com");
-    site.scrape2();
+    const site = new WUJob("https://www.51job.com");
+    await site.scrape();
 }
 main();

@@ -2,21 +2,61 @@ import { Browser, Page } from "puppeteer";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { logger } from "../utils/Logger";
+import fs, { promises } from "fs";
+import { City } from "../common/city";
 
 puppeteer.use(StealthPlugin());
-
-export default class Site {
+interface ISite {
+    scrapeCities(): Promise<any>;
+    scrape(): Promise<any>;
+}
+export default class Site implements ISite {
     #url: string;
     constructor(url: string) {
         // private member variable
         this.#url = url;
     }
+    async init(citiesfile: string): Promise<City[]> {
+        let result: Promise<any[]> = new Promise((resolve, rejects) => {
+            if (!fs.existsSync(citiesfile)) {
+                logger.debug("scrape cities...");
+                this.scrapeCities().then((data) => {
+                    promises
+                        .writeFile(citiesfile, JSON.stringify(data), {
+                            flag: "w",
+                        })
+                        .then(() => {
+                            console.log("Store cities Successfully");
+                            resolve(data);
+                        });
+                });
+            } else {
+                logger.debug(`read cities from ${citiesfile}`);
+                fs.readFile(citiesfile, "utf8", (error: any, data: string) => {
+                    if (error) {
+                        rejects(new Error(`read ${citiesfile} failed!`));
+                    }
+                    resolve(JSON.parse(data));
+                });
+            }
+        });
+        return result;
+    }
     getUrl() {
         return this.#url;
     }
+
+    public async scrape(): Promise<any> {
+        logger.error("Not implement!");
+        return Promise.reject(new Error("Not implement!"));
+    }
+    public async scrapeCities(): Promise<any> {
+        logger.error("Please implement it in subclass.");
+        return Promise.reject(new Error("not implement"));
+    }
     launchBrowser = async (): Promise<Browser> => {
         logger.debug("launch browser...");
-        return puppeteer.launch({ headless: true });
+        return puppeteer.launch({ headless: false });
     };
     createSession = async (): Promise<string> => {
         console.log("create steel session...");
