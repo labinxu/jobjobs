@@ -1,7 +1,7 @@
+import { City } from "../common/city";
 import Site from "../common/site";
 import { logger } from "../utils/Logger";
 import path from "path";
-import { env } from "../env";
 
 export default class WUJob extends Site {
     constructor(url: string) {
@@ -23,18 +23,27 @@ export default class WUJob extends Site {
     // };
 
     scrape = async () => {
-        const citiesfile = path.join(
-            env.DATA_PATH,
-            "..",
-            "data",
-            "wujob",
-            "cities.json",
-        );
+        const citiesfile = path.join("/tmp", "data", "wujob", "cities.json");
         logger.debug("subclass scrape function");
         const cities = await this.init(citiesfile);
+        if (cities.length <= 0) {
+            throw Error("Cities is empty!");
+        }
+        this.scrapeIndusties(cities);
+    };
+    scrapeIndusties = async (cities: City[]) => {
+        logger.info("scrape industies...");
+        const cluster = await this.getCluster();
+        await cluster.task(async ({ page, data }) => {
+            await page.goto(data.url, { waitUntil: "networkidle0" });
+            //await page.screenshot({ path: `logs/images/${data.name}.jpg` });
+        });
+
         for (let city of cities) {
             logger.debug(`${city.name}:${city.link}`);
         }
+        await cluster.idle();
+        await cluster.close();
     };
     override async scrapeCities(): Promise<any> {
         console.log(`Scrape cities from :${this.getUrl()}`);
@@ -72,6 +81,8 @@ export default class WUJob extends Site {
             return Promise.resolve(cities);
         } catch (error) {
             console.error(error);
+        } finally {
+            browser.close();
         }
     }
 }

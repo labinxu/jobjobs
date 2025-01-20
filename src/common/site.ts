@@ -2,6 +2,7 @@ import { Browser, Page } from "puppeteer";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { logger } from "../utils/Logger";
+import { Cluster } from "puppeteer-cluster";
 import fs, { promises } from "fs";
 import { City } from "../common/city";
 
@@ -12,11 +13,23 @@ interface ISite {
 }
 export default class Site implements ISite {
     #url: string;
+
     constructor(url: string) {
         // private member variable
         this.#url = url;
     }
+    getCluster = async (): Promise<Cluster<any, any>> => {
+        return Cluster.launch({
+            concurrency: Cluster.CONCURRENCY_CONTEXT,
+            maxConcurrency: 2,
+            puppeteerOptions: {
+                headless: false,
+            },
+            puppeteer: puppeteer,
+        });
+    };
     async init(citiesfile: string): Promise<City[]> {
+        logger.info("Init cluster");
         let result: Promise<any[]> = new Promise((resolve, rejects) => {
             if (!fs.existsSync(citiesfile)) {
                 logger.debug("scrape cities...");
@@ -56,7 +69,7 @@ export default class Site implements ISite {
     }
     launchBrowser = async (): Promise<Browser> => {
         logger.debug("launch browser...");
-        return puppeteer.launch({ headless: false });
+        return puppeteer.launch({ headless: true });
     };
     createSession = async (): Promise<string> => {
         console.log("create steel session...");
