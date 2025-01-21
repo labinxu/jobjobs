@@ -13,22 +13,27 @@ interface ISite {
 }
 export default class Site implements ISite {
     #url: string;
-
+    cluster: Cluster | null;
     constructor(url: string) {
         // private member variable
         this.#url = url;
+        this.cluster = null;
     }
     getCluster = async (): Promise<Cluster<any, any>> => {
-        return Cluster.launch({
-            concurrency: Cluster.CONCURRENCY_CONTEXT,
-            maxConcurrency: 2,
-            puppeteerOptions: {
-                headless: false,
-            },
-            puppeteer: puppeteer,
-        });
+        if (!this.cluster) {
+            logger.info("init cluster handler!");
+            this.cluster = await Cluster.launch({
+                concurrency: Cluster.CONCURRENCY_CONTEXT,
+                maxConcurrency: 2,
+                puppeteerOptions: {
+                    headless: true,
+                },
+                puppeteer: puppeteer,
+            });
+        }
+        return this.cluster;
     };
-    async init(citiesfile: string): Promise<City[]> {
+    async initCities(citiesfile: string): Promise<City[]> {
         logger.info("Init cluster");
         let result: Promise<any[]> = new Promise((resolve, rejects) => {
             if (!fs.existsSync(citiesfile)) {
