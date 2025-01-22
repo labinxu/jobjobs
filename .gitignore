@@ -133,3 +133,4 @@ dist
 .nvmrc
 .DS_Store
 pnpm-lock.yaml
+.env

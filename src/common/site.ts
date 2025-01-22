@@ -60,7 +60,7 @@ export default class Site implements ISite {
         });
         return result;
     }
-    getUrl() {
+    getLink() {
         return this.#url;
     }
 
@@ -77,7 +77,7 @@ export default class Site implements ISite {
         return puppeteer.launch({ headless: true });
     };
     createSession = async (): Promise<string> => {
-        console.log("create steel session...");
+        logger.log("create steel session...");
         const createSession = {
             sessionContext: {
                 ANY_ADDITIONAL_PROPERTY: "anything",
@@ -89,7 +89,7 @@ export default class Site implements ISite {
             },
         };
         const url = `${process.env.STEEL_BASE_URL}/v1/sessions`;
-        console.log(`Create session with url:${url}`);
+        logger.log(`Create session with url:${url}`);
         const resp = await fetch(url, {
             method: "POST",
             body: JSON.stringify(createSession),
@@ -101,7 +101,7 @@ export default class Site implements ISite {
                 try {
                     resolve(content.id);
                 } catch (error) {
-                    console.log(error);
+                    logger.log(error);
                     reject(new Error("Create session failed!"));
                 }
             });
@@ -109,7 +109,7 @@ export default class Site implements ISite {
         return Promise.reject(new Error("Create session failed"));
     };
     releaseSession = async (id: string): Promise<boolean> => {
-        console.log(`Release session:${id}`);
+        logger.log(`Release session:${id}`);
         return Promise.resolve(true);
     };
     newPage = async (id: string): Promise<Page> => {

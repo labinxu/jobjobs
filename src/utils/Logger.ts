@@ -1,5 +1,4 @@
 import pino from "pino";
-import { dirname } from "path";
 import { env } from "../env";
 
 // export const logger = pino({
