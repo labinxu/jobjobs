@@ -1,15 +1,30 @@
 import { Page } from "puppeteer";
+import { Db, MongoClient } from "mongodb";
 import { City } from "../common/city";
 import Site from "../common/site";
 import { logger } from "../utils/Logger";
 import path from "path";
 import { env } from "../env";
-import { sleep, randomInteger } from "../utils";
+import { sleep, randomInteger, now } from "../utils";
+import { getMongoDb } from "../db";
+import { scrapeSleep } from "../utils";
 
 export default class WUJob extends Site {
+    #db: Db | null = null;
     constructor(url: string) {
         super(url);
     }
+    getDb = async (): Promise<Db> => {
+        if (!this.#db) {
+            logger.info("Init db...");
+            this.#db = await getMongoDb();
+        }
+        return this.#db;
+    };
+    getCollection = async (name: string) => {
+        const db = await this.getDb();
+        return db.collection(name);
+    };
     scrape = async () => {
         const citiesfile = path.join(env.DATA_DIR, "wujob", "cities.json");
         logger.debug("subclass scrape function");
@@ -18,6 +33,7 @@ export default class WUJob extends Site {
             logger.error("Cities is empty!");
             throw Error("Cities is empty!");
         }
+        scrapeSleep();
         const indus = await this.scrapeIndusties(cities.slice(0, 1));
         if (!(indus.length > 0)) {
             logger.error("Error hanppend fail to scrape industy !");
@@ -59,18 +75,35 @@ export default class WUJob extends Site {
         if (positions.length <= 0) {
             logger.error(`No positions found! ${data.name} on ${data.link}`);
             await page.screenshot({
-                path: `${env.LOG_DIR}/images/err_nopositions.jpg`,
+                path: `${env.LOG_DIR}/images/err_nopositions_${now()}.jpg`,
             });
 
             return Promise.reject("No positions found!");
         }
+        this.getCollection(env.COLLECTION_NAME).then((collection) => {
+            logger.info(
+                `Insert ${positions.length} positions for ${data.name}`,
+            );
+            collection.insertMany(positions);
+        });
         logger.info(
             `Scrape ${positions.length} positions for ${data.name} on ${data.link}`,
         );
         // find next page
         // const next = await page.$("div.dw_page ul :nth-last-child(1 of li.bk) a");
+        const pagesTag = await page.$$eval("div.dw_page ul li", (el) =>
+            el.map((e) => e.textContent),
+        );
+        if (pagesTag.length < 0) {
+            logger.error("No pages found!");
+            return Promise.resolve(positions);
+        }
+        logger.info(`pages: ${JSON.stringify(pagesTag)}`);
         const next = await page.$("div.dw_page ul li.on  +li a");
         if (next) {
+            logger.info(
+                `Current page: ${await next.evaluate((a) => a.textContent)}`,
+            );
             await sleep(randomInteger(1000, 6000));
             const ps = await this.cluster?.execute(
                 {
@@ -80,18 +113,17 @@ export default class WUJob extends Site {
                 this._scrapePositions,
             );
             positions.push(...ps);
+        } else {
+            logger.info("No next page found!");
         }
-
         return Promise.resolve(positions);
     };
     scrapePositions = async (industies: any[]): Promise<any[]> => {
         const cluster = await this.getCluster();
-        // await cluster.task(async ({ page, data }) => {
-        //     return this._scrapePositions(page, data);
-        // });
         // add tasks
         const positions = await Promise.allSettled(
             industies.map(async (i) => {
+                scrapeSleep();
                 return cluster.execute(i, this._scrapePositions);
             }),
         );
@@ -116,7 +148,7 @@ export default class WUJob extends Site {
                 const hles = await page.$$("div.hle");
                 if (hles.length <= 0) {
                     await page.screenshot({
-                        path: `${env.LOG_DIR}/images/err_div.hle.jpg`,
+                        path: `${env.LOG_DIR}/images/err_div.hle${now()}.jpg`,
                     });
                     return Promise.reject("no div.hle found");
                 }

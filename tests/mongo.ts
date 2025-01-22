@@ -1,10 +1,11 @@
-import { getMongoDb } from "../src/db";
-import { env } from "../src/env";
-console.log(env.DB_CONN_STRING);
+import WuJob from "../src/51job/";
+
 async function fetchData() {
-    const db = await getMongoDb();
+    const wj = new WuJob("");
+    const db = await wj.getDb();
+    console.log(db);
     const collection = db.collection("table");
-    // collection.insertMany([
+    // collection.insertMany(
     //     { name: "gg", age: 20 },
     //     { name: "pp", age: 30 },
     // ]);

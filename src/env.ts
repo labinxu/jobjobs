@@ -8,5 +8,6 @@ const envSchema = z.object({
     DB_CONN_STRING: z.string(), //.default("http://localhost:27017/"),
     DATA_DIR: z.string(),
     LOG_DIR: z.string(),
+    COLLECTION_NAME: z.string().default("col_position"),
 });
 export const env = envSchema.parse(process.env);
