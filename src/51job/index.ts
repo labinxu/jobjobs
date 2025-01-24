@@ -8,6 +8,7 @@ import { env } from "../env";
 import { sleep, randomInteger, now } from "../utils";
 import { getMongoDb } from "../db";
 import { scrapeSleep } from "../utils";
+import { TPage } from "../common/page";
 
 export default class WUJob extends Site {
     #db: Db | null = null;
@@ -33,33 +34,27 @@ export default class WUJob extends Site {
             logger.error("Cities is empty!");
             throw Error("Cities is empty!");
         }
-        scrapeSleep();
+        logger.info(`Scrape ${cities.length} cities ${JSON.stringify(cities)}`);
+        await scrapeSleep();
         const indus = await this.scrapeIndusties(cities.slice(0, 1));
         if (!(indus.length > 0)) {
             logger.error("Error hanppend fail to scrape industy !");
             throw Error("Error hanppend fail to scrape industy !");
         }
         logger.info(`Scrape ${indus.length} industies`);
-        const positions = await this.scrapePositions(indus.slice(1, 2));
-        logger.info(`Scrape ${positions.length} positions`);
-        await this.getCluster().then((cluster) => {
-            cluster.close();
-        });
+        await this.scrapePositions(indus.slice(2, 3));
+        logger.info("End of scrape!");
     };
-    private _scrapePositions = async ({
-        page,
-        data,
-    }: {
-        page: Page;
-        data: { name: string; link: string };
-    }): Promise<any[]> => {
-        logger.debug(`goto ${data.link} for ${data.name}`);
-        try {
-            await page.goto(data.link, { waitUntil: "networkidle0" });
-        } catch (err) {
-            logger.error(`goto ${data.link} for ${data.name} failed`);
-            return Promise.reject("goto failed");
-        }
+    //return the next page if it exists
+    private doScrapePositions = async (
+        page: Page,
+        data: { name: string; link: string },
+    ): Promise<any> => {
+        const pn = await page.$eval(
+            "div.dw_page ul li.on",
+            (el) => el.textContent,
+        );
+        logger.info(`doScrapePositions,page:${pn} ${JSON.stringify(data)}`);
         const positions = await page.$$eval(
             "div.detlist.gbox .e.sensors_exposure",
             (el) =>
@@ -86,52 +81,94 @@ export default class WUJob extends Site {
             );
             collection.insertMany(positions);
         });
-        logger.info(
-            `Scrape ${positions.length} positions for ${data.name} on ${data.link}`,
-        );
-        // find next page
-        // const next = await page.$("div.dw_page ul :nth-last-child(1 of li.bk) a");
-        const pagesTag = await page.$$eval("div.dw_page ul li", (el) =>
-            el.map((e) => e.textContent),
-        );
-        if (pagesTag.length < 0) {
-            logger.error("No pages found!");
-            return Promise.resolve(positions);
-        }
-        logger.info(`pages: ${JSON.stringify(pagesTag)}`);
-        const next = await page.$("div.dw_page ul li.on  +li a");
-        if (next) {
-            logger.info(
-                `Current page: ${await next.evaluate((a) => a.textContent)}`,
-            );
+        logger.info(`Scrape ${positions.length} [${data.name}] ${data.link}`);
+        let nextPage = await this.getNextPage(page).catch(async (err) => {
+            await page.screenshot({
+                path: `${env.LOG_DIR}/images/err_nopage_${now()}.jpg`,
+                fullPage: true,
+            });
+        });
+        if (nextPage) {
+            logger.info(`Next page found! ${JSON.stringify(nextPage)}`);
             await sleep(randomInteger(1000, 6000));
-            const ps = await this.cluster?.execute(
-                {
-                    name: data.name,
-                    link: await next.evaluate((a) => a.href),
-                },
-                this._scrapePositions,
-            );
-            positions.push(...ps);
+            const payload = {
+                name: data.name,
+                link: nextPage.link,
+            };
+            await nextPage.handle.click();
+            await page.waitForNavigation({ waitUntil: "networkidle0" });
+            await this.doScrapePositions(page, payload);
+            nextPage = await this.getNextPage(page).catch((err) => {
+                logger.info(err);
+            });
+        } else {
+            await page.screenshot({
+                path: `${env.LOG_DIR}/images/err_nopage_${now()}.jpg`,
+                fullPage: true,
+            });
+            logger.info("End of pages!");
+            return Promise.reject("End of pages!");
+        }
+    };
+    private getNextPage = async (page: Page): Promise<TPage> => {
+        const nextPage = await page.$("div.dw_page ul li.on +li a");
+        if (nextPage) {
+            const nextData = await nextPage.evaluate((el) => {
+                return {
+                    handle: nextPage,
+                    name: el.textContent,
+                    link: el.href,
+                };
+            });
+
+            logger.info(`Next page found! ${JSON.stringify(nextData)}`);
+            return Promise.resolve(nextData);
         } else {
             logger.info("No next page found!");
+            return Promise.reject("No next page found!");
         }
-        return Promise.resolve(positions);
     };
-    scrapePositions = async (industies: any[]): Promise<any[]> => {
+    private printPageNumber = async (page: Page) => {
+        const pageNum = await page.$eval(
+            "div.dw_page ul li.on",
+            (el) => el.textContent,
+        );
+
+        logger.info(`Current page : ${pageNum}`);
+    };
+
+    private _scrapePositions = async ({
+        page,
+        data,
+    }: {
+        page: Page;
+        data: { name: string; link: string };
+    }) => {
+        logger.debug(`goto ${data.link} for ${data.name}`);
+
+        try {
+            await page.goto(data.link, { waitUntil: "networkidle0" });
+        } catch (err) {
+            logger.error(`goto ${data.link} for ${data.name} failed`);
+            return;
+        }
+        await this.printPageNumber(page);
+        await this.doScrapePositions(page, data);
+        logger.info("end positions scrape.");
+        return Promise.resolve("End of positions scrape!");
+    };
+
+    scrapePositions = async (industies: any[]) => {
         const cluster = await this.getCluster();
         // add tasks
-        const positions = await Promise.allSettled(
+        await Promise.allSettled(
             industies.map(async (i) => {
                 scrapeSleep();
                 return cluster.execute(i, this._scrapePositions);
             }),
         );
-        return positions
-            .filter((p: any) => p.status === "fulfilled")
-            .map((p: any) => p.value)
-            .reduce((acc, current) => acc.concat(current), []);
     };
+
     scrapeIndusties = async (cities: City[]): Promise<any[]> => {
         logger.info("scrape industies...");
         const cluster = await this.getCluster();
@@ -188,42 +225,30 @@ export default class WUJob extends Site {
     };
     override async scrapeCities(): Promise<any> {
         logger.info(`Scrape cities from :${this.getLink()}`);
-        const browser = await this.launchBrowser();
-        try {
-            const page = await browser.newPage();
-            await page.goto(this.getLink(), { waitUntil: "networkidle0" });
-            const hcity = await page.$("div.hcity");
-            if (!hcity) {
-                logger.error("div.hcity not found!");
-                return null;
-            }
-            const citiesLink = await hcity.$$("a");
-            if (citiesLink.length <= 0) {
-                logger.error("a not found in div.hcity!");
-                return null;
-            }
-            const cities: any[] = [];
-            for (const link of citiesLink) {
-                cities.push(
-                    await link.evaluate((l) => {
-                        const name = l.textContent?.trim();
-                        if (name && name !== "") {
-                            return {
-                                name: l.textContent?.trim(),
-                                link: l.href,
-                            };
-                        }
+        const cluster = await this.getCluster();
+        const cities = await cluster.execute(
+            this.getLink(),
+            async ({ page, data }: { page: Page; data: string }) => {
+                logger.info(`goto ${data}`);
+                await page.goto(data, { waitUntil: "networkidle0" });
+                const cityLinks = await page.$$eval("div.hcity a", (el) =>
+                    el.map((x) => {
+                        return { name: x.textContent, link: x.href };
                     }),
                 );
-            }
-            cities.pop(); //remove the last useless item
-            // logger.warn(JSON.stringify(cities));
-            return Promise.resolve(cities);
-        } catch (error) {
-            logger.error(error);
-            return Promise.reject(error);
-        } finally {
-            browser.close();
-        }
+                if (cityLinks.length <= 0) {
+                    logger.error("no city found!");
+                    page.screenshot({
+                        path: `${env.LOG_DIR}/images/err_nocity_${now()}.jpg`,
+                    });
+                    return Promise.reject("no city found!");
+                } else {
+                    return Promise.resolve(cityLinks);
+                }
+            },
+        );
+
+        cities.pop();
+        return cities;
     }
 }

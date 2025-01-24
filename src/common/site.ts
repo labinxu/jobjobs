@@ -24,7 +24,7 @@ export default class Site implements ISite {
             logger.info("init cluster handler!");
             this.cluster = await Cluster.launch({
                 concurrency: Cluster.CONCURRENCY_CONTEXT,
-                maxConcurrency: 2,
+                maxConcurrency: 1,
                 puppeteerOptions: {
                     headless: true,
                 },
